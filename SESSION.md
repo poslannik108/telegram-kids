@@ -43,9 +43,13 @@ bash ~/projects/telegram-kids/setup-rn.sh
 
 **Первая задача:**
 1. Убедиться что `setup-rn.sh` завершился успешно
-2. Создать нативный модуль TdLib для React Native (Kotlin)
-3. Написать `mobile-app/src/TdLib.js` — singleton клиент
-4. Реализовать авторизацию через TDLib (LoginScreen v2)
+2. Реализовать Фазу 1а: `feature_flags` в БД + `GET /feature-flags` + `useFeatureFlag.js`
+3. Реализовать Фазу 1б: `app_themes` в БД + `GET /theme` + `ThemeProvider.js` + `useTheme.js`
+4. Создать нативный модуль TdLib (Kotlin) + `TdLib.js` singleton
+5. Реализовать авторизацию через TDLib (LoginScreen v2)
+
+> ВАЖНО: Фазы 1а и 1б — ПЕРВЫЕ. Без них нельзя писать экраны.
+> Все компоненты сразу используют useTheme() и useFeatureFlag().
 
 **Контекст который важно помнить:**
 - Мобильное приложение должно подключаться к Telegram НАПРЯМУЮ через TDLib

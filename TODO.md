@@ -63,6 +63,19 @@
 | **Групповые чаты** | **список участников, роли, экраны управления** | **3–4 нед** |
 | **Звонки (голос + видео)** | **WebRTC интеграция, отдельный UI звонка** | **8–12 нед** |
 
+## Фаза 1а — Фундамент безопасной архитектуры
+*Делать ПЕРВЫМ — до любых экранов*
+
+- [ ] Таблица `feature_flags` в `db.py` (name, is_enabled, description)
+      Засеять флаги: stories, video_notes, reactions, calls, stickers_animated,
+      voice_messages, file_sharing, search_global
+- [ ] `GET /feature-flags` в `api_server.py` — возвращает все флаги (без авторизации)
+- [ ] `src/hooks/useFeatureFlag.js` — читает флаги из кэша, обновляет при старте
+- [ ] `src/store/featureFlags.js` — Zustand store для флагов
+- [ ] `src/theme/ThemeProvider.js` — remote theming (см. Фаза 1б)
+- [ ] `src/theme/useTheme.js` — hook, все компоненты получают тему через него
+- [ ] Убедиться что слои соблюдены: экраны → хуки → store → TdLib.js/api.js
+
 ## Фаза 1б — Remote Theming (цвета, шрифты, иконки из БД)
 *Делать параллельно с Фазой 1 — закладывается в фундамент*
 
