@@ -24,19 +24,16 @@ echo "✓ TDLib найден"
 
 # ── 1. Инициализация React Native проекта ────────────────────────────────────
 echo ""
-echo "[1/5] Создаём React Native 0.74 проект..."
-rm -rf "$TEMP_DIR"
-mkdir -p "$TEMP_DIR"
-cd "$TEMP_DIR"
+echo "[1/5] Создаём React Native 0.74 проект (~5 мин)..."
+cd /tmp
+rm -rf TelegramKidsSetup
+mkdir TelegramKidsSetup
+cd TelegramKidsSetup
 
-# Инициализируем без --skip-install чтобы получить android/
-npx react-native@0.74.2 init TelegramKids \
-    --directory "$TEMP_DIR/TelegramKids" \
-    --skip-git-init \
-    --install-pods=false
+npx react-native@0.74.2 init TelegramKids --npm
 
 # Проверяем что android/ создался
-if [ ! -d "$TEMP_DIR/TelegramKids/android" ]; then
+if [ ! -d "/tmp/TelegramKidsSetup/TelegramKids/android" ]; then
     echo "ОШИБКА: android/ не создался. Проверьте вывод выше."
     exit 1
 fi
@@ -44,11 +41,11 @@ echo "✓ React Native проект создан"
 
 # ── 2. Копируем android/ и ios/ ───────────────────────────────────────────────
 echo ""
-echo "[2/5] Копируем android/ ios/ в проект..."
+echo "[2/5] Копируем android/ в проект..."
 rm -rf "$RN_DIR/android" "$RN_DIR/ios" "$RN_DIR/node_modules" 2>/dev/null || true
-cp -r "$TEMP_DIR/TelegramKids/android" "$RN_DIR/"
-cp -r "$TEMP_DIR/TelegramKids/ios"     "$RN_DIR/" 2>/dev/null || true
-rm -rf "$TEMP_DIR"
+cp -r /tmp/TelegramKidsSetup/TelegramKids/android "$RN_DIR/"
+cp -r /tmp/TelegramKidsSetup/TelegramKids/ios     "$RN_DIR/" 2>/dev/null || true
+rm -rf /tmp/TelegramKidsSetup
 echo "✓ android/ скопирован"
 
 # ── 3. package.json ───────────────────────────────────────────────────────────
