@@ -63,8 +63,8 @@
 | **Групповые чаты** | **список участников, роли, экраны управления** | **3–4 нед** |
 | **Звонки (голос + видео)** | **WebRTC интеграция, отдельный UI звонка** | **8–12 нед** |
 
-## Фаза 1а — Фундамент безопасной архитектуры
-*Делать ПЕРВЫМ — до любых экранов*
+## Фаза 1а — Фундамент (делать ПЕРВЫМ — до любых экранов)
+*feature flags + remote theming + i18n — всё до первого экрана*
 
 - [ ] Таблица `feature_flags` в `db.py` (name, is_enabled, description)
       Засеять флаги: stories, video_notes, reactions, calls, stickers_animated,
@@ -75,6 +75,17 @@
 - [ ] `src/theme/ThemeProvider.js` — remote theming (см. Фаза 1б)
 - [ ] `src/theme/useTheme.js` — hook, все компоненты получают тему через него
 - [ ] Убедиться что слои соблюдены: экраны → хуки → store → TdLib.js/api.js
+
+**i18n (мультиязычность):**
+- [ ] Таблица `translations` в `db.py` (lang, namespace, key, value)
+- [ ] `GET /translations/{lang}/{namespace}` в `api_server.py`
+- [ ] Засеять RU + EN строки при старте сервера
+- [ ] Добавить `language` в таблицу `parents` + передавать язык в боте
+- [ ] `npm install i18next react-i18next react-native-localize dayjs`
+- [ ] `src/i18n/i18n.js` — инициализация (MMKV кэш → сервер → fallback locales)
+- [ ] `src/i18n/locales/ru/` и `src/i18n/locales/en/` — все namespace-файлы
+- [ ] `src/i18n/useTranslation.js` — единая точка входа
+- [ ] Все строки в компонентах через `t('ключ')`, не хардкод
 
 ## Фаза 1б — Remote Theming (цвета, шрифты, иконки из БД)
 *Делать параллельно с Фазой 1 — закладывается в фундамент*

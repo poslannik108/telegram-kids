@@ -41,15 +41,16 @@ find ~/td/example/android/tdlib/libs -name "libtdjni.so" | sort
 bash ~/projects/telegram-kids/setup-rn.sh
 ```
 
-**Первая задача:**
-1. Убедиться что `setup-rn.sh` завершился успешно
-2. Реализовать Фазу 1а: `feature_flags` в БД + `GET /feature-flags` + `useFeatureFlag.js`
-3. Реализовать Фазу 1б: `app_themes` в БД + `GET /theme` + `ThemeProvider.js` + `useTheme.js`
-4. Создать нативный модуль TdLib (Kotlin) + `TdLib.js` singleton
-5. Реализовать авторизацию через TDLib (LoginScreen v2)
+**Первая задача после `setup-rn.sh`:**
+1. Фаза 1а — фундамент (в этом порядке):
+   a. `feature_flags` в БД + `GET /feature-flags` + `useFeatureFlag.js`
+   b. `app_themes` в БД + `GET /theme` + `ThemeProvider.js` + `useTheme.js`
+   c. `translations` в БД + `GET /translations/{lang}/{ns}` + `i18n.js` + `useTranslation.js`
+2. Только после 1а — нативный модуль TdLib (Kotlin) + `TdLib.js` singleton
+3. Только после TdLib — первые экраны (LoginScreen v2)
 
-> ВАЖНО: Фазы 1а и 1б — ПЕРВЫЕ. Без них нельзя писать экраны.
-> Все компоненты сразу используют useTheme() и useFeatureFlag().
+> ПРАВИЛО: ни один компонент не пишется без useTheme(), useFeatureFlag(), t()
+> Хардкодные строки, цвета, флаги — нарушение архитектуры.
 
 **Контекст который важно помнить:**
 - Мобильное приложение должно подключаться к Telegram НАПРЯМУЮ через TDLib
