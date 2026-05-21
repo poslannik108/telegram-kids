@@ -63,6 +63,47 @@
 | **Групповые чаты** | **список участников, роли, экраны управления** | **3–4 нед** |
 | **Звонки (голос + видео)** | **WebRTC интеграция, отдельный UI звонка** | **8–12 нед** |
 
+## Фаза 1б — Remote Theming (цвета, шрифты, иконки из БД)
+*Делать параллельно с Фазой 1 — закладывается в фундамент*
+
+**Концепция:** все визуальные параметры приложения хранятся в БД на сервере.
+Приложение загружает тему при старте и кэширует локально. Смена темы — без обновления в сторе.
+
+**Бэкенд:**
+- [ ] Таблица `app_themes` в `db.py`:
+  ```sql
+  id, name, is_active,
+  -- Цвета
+  color_bg, color_bg_secondary, color_bg_element,
+  color_accent, color_bubble_in, color_bubble_out,
+  color_text, color_text_secondary, color_divider,
+  color_danger, color_success,
+  -- Шрифты
+  font_size_base, font_size_small, font_size_large,
+  font_weight_normal, font_weight_bold,
+  -- Форма элементов
+  border_radius_bubble, border_radius_button, border_radius_avatar,
+  -- Иконки
+  icon_set,   -- 'material' | 'ionicons' | 'custom'
+  created_at, updated_at
+  ```
+- [ ] `GET /theme` в `api_server.py` — возвращает активную тему (без авторизации)
+- [ ] Метод `get_active_theme()` и `set_active_theme(theme_id)` в `db.py`
+- [ ] Засеять дефолтную тему при старте сервера
+
+**Мобильное приложение:**
+- [ ] `src/theme/ThemeProvider.js` — загружает тему с сервера, кэширует в MMKV
+- [ ] `src/theme/useTheme.js` — hook, все компоненты получают тему через него
+- [ ] Все цвета/размеры в компонентах — ТОЛЬКО через `useTheme()`, не хардкод
+- [ ] Fallback на встроенную дефолтную тему если сервер недоступен
+- [ ] Обновление темы раз в сутки в фоне (или при pull-to-refresh)
+
+**Пример использования в компоненте:**
+```js
+const { colors, fonts, radii } = useTheme()
+// colors.accent, colors.bgElement, fonts.sizeBase, radii.bubble
+```
+
 ## Фаза 6 — Родительский контроль (интеграция с бэкендом)
 *Большинство уже реализовано в backend/main.py*
 
