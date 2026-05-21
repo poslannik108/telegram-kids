@@ -7,11 +7,11 @@ REST API для мобильного приложения ребёнка
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-import asyncio
 import os
 import uuid
 from datetime import datetime
 import main as backend
+import fcm as push
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -61,7 +61,7 @@ async def get_child_client(x_api_key: str) -> tuple[TelegramClient, str]:
 # ============================================================
 
 class JoinChatRequest(BaseModel):
-    chat_identifier: str  # @username или ссылка-приглашение
+    chat_identifier: str
 
 
 class BotRequest(BaseModel):
@@ -71,6 +71,11 @@ class BotRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     chat_id: int
     text: str
+
+
+class DeviceTokenRequest(BaseModel):
+    fcm_token: str
+    platform: str = "android"  # "android" | "ios"
 
 
 class PhoneRequest(BaseModel):
@@ -92,33 +97,24 @@ async def health():
     return {"status": "ok", "service": "FamilyGuard"}
 
 
-DECISION_TIMEOUT = 600  # 10 минут
-
-
-async def _wait_for_decision(event: asyncio.Event, request: Request, request_id: str) -> str:
-    """
-    Ждёт события от родителя.
-    Возвращает 'ok' | 'disconnected' | 'timeout'.
-    Очищает pending_events в любом исходе.
-    """
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + DECISION_TIMEOUT
-    try:
-        while not event.is_set():
-            if await request.is_disconnected():
-                return "disconnected"
-            if loop.time() >= deadline:
-                backend.db.update_request_status(request_id, "timeout")
-                return "timeout"
-            await asyncio.sleep(0.3)
-        return "ok"
-    finally:
-        backend.pending_events.pop(request_id, None)
+def _create_approval_request(child: dict, req_type: str, name: str, extra: dict) -> str:
+    """Создаёт pending request и уведомляет родителя. Возвращает request_id."""
+    request_id = f"{req_type}_{child['id']}_{int(datetime.now().timestamp())}"
+    backend.db.save_pending_request(request_id, {
+        "type": req_type, "status": "pending",
+        **extra,
+    }, child_id=child["id"])
+    return request_id
 
 
 @app.post("/join-chat")
-async def join_chat(req: JoinChatRequest, request: Request, x_api_key: str = Header(...)):
-    """Запрос на вступление в чат. Ждёт решения родителя без polling."""
+async def join_chat(req: JoinChatRequest, x_api_key: str = Header(...)):
+    """
+    Запрос на вступление в чат.
+    Возвращает request_id немедленно — приложение показывает PendingScreen
+    и опрашивает /request-status/{id} раз в 3 сек.
+    Когда родитель решает — сервер посылает FCM push ребёнку.
+    """
     verify_token(x_api_key)
     _, user_id = await get_child_client(x_api_key)
     child = backend.db.get_child_by_telegram_id(user_id)
@@ -129,29 +125,22 @@ async def join_chat(req: JoinChatRequest, request: Request, x_api_key: str = Hea
         return {"allowed": False, "reason": "blocked"}
 
     parent = backend.db.get_parent_by_id(child["parent_id"])
-    request_id = f"join_{child['id']}_{int(datetime.now().timestamp())}"
-    backend.db.save_pending_request(request_id, {
-        "type": "join_chat", "chat_name": req.chat_identifier,
-        "chat_identifier": req.chat_identifier, "status": "pending",
-    }, child_id=child["id"])
+    request_id = _create_approval_request(child, "join_chat", req.chat_identifier, {
+        "chat_name": req.chat_identifier,
+        "chat_identifier": req.chat_identifier,
+    })
 
-    event = asyncio.Event()
-    backend.pending_events[request_id] = event
     if backend.parent_app:
         await backend.notify_parent_join_request(
             backend.parent_app, parent["telegram_id"], request_id, req.chat_identifier
         )
 
-    reason = await _wait_for_decision(event, request, request_id)
-    if reason in ("disconnected", "timeout"):
-        return {"allowed": False, "reason": reason}
-    result = backend.db.get_pending_request(request_id)
-    return {"allowed": result["status"] == "approved", "reason": result["status"]}
+    return {"request_id": request_id, "status": "pending"}
 
 
 @app.post("/use-bot")
-async def use_bot(req: BotRequest, request: Request, x_api_key: str = Header(...)):
-    """Запрос на использование бота. Ждёт решения родителя без polling."""
+async def use_bot(req: BotRequest, x_api_key: str = Header(...)):
+    """Запрос на использование бота. Логика аналогична /join-chat."""
     verify_token(x_api_key)
     _, user_id = await get_child_client(x_api_key)
     child = backend.db.get_child_by_telegram_id(user_id)
@@ -162,25 +151,47 @@ async def use_bot(req: BotRequest, request: Request, x_api_key: str = Header(...
         return {"allowed": False, "reason": "blocked"}
 
     parent = backend.db.get_parent_by_id(child["parent_id"])
-    request_id = f"bot_{child['id']}_{int(datetime.now().timestamp())}"
-    backend.db.save_pending_request(request_id, {
-        "type": "use_bot", "bot_name": req.bot_username,
-        "bot_username": req.bot_username, "status": "pending",
-    }, child_id=child["id"])
+    request_id = _create_approval_request(child, "use_bot", req.bot_username, {
+        "bot_name": req.bot_username,
+        "bot_username": req.bot_username,
+    })
 
-    event = asyncio.Event()
-    backend.pending_events[request_id] = event
     if backend.parent_app:
         await backend.notify_parent_bot_request(
             backend.parent_app, parent["telegram_id"], request_id,
             req.bot_username, req.bot_username
         )
 
-    reason = await _wait_for_decision(event, request, request_id)
-    if reason in ("disconnected", "timeout"):
-        return {"allowed": False, "reason": reason}
-    result = backend.db.get_pending_request(request_id)
-    return {"allowed": result["status"] == "approved", "reason": result["status"]}
+    return {"request_id": request_id, "status": "pending"}
+
+
+@app.get("/request-status/{request_id}")
+async def request_status(request_id: str, x_api_key: str = Header(...)):
+    """
+    Лёгкий polling от приложения ребёнка пока ждёт решения.
+    Вызывается раз в 3 сек — нагрузка минимальная.
+    FCM также шлёт мгновенный push при решении (основной канал).
+    """
+    verify_token(x_api_key)
+    req = backend.db.get_pending_request(request_id)
+    if not req:
+        raise HTTPException(404, "Request not found")
+    return {
+        "status": req["status"],
+        "allowed": req["status"] == "approved",
+    }
+
+
+@app.post("/device-token")
+async def register_device_token(req: DeviceTokenRequest, x_api_key: str = Header(...)):
+    """Регистрирует FCM токен устройства ребёнка для push-уведомлений."""
+    verify_token(x_api_key)
+    user_id = backend.db.get_setting(f"token_{x_api_key}")
+    child = backend.db.get_child_by_telegram_id(user_id) if user_id else None
+    if not child:
+        raise HTTPException(404, "Child not found")
+    backend.db.save_device_token(child["id"], req.fcm_token, req.platform)
+    return {"success": True}
 
 
 @app.get("/dialogs")

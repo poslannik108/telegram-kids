@@ -137,6 +137,15 @@ class Database:
                     value TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS device_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    child_id INTEGER NOT NULL REFERENCES children(id),
+                    fcm_token TEXT NOT NULL,
+                    platform TEXT NOT NULL DEFAULT 'android',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(child_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     child_id INTEGER REFERENCES children(id),
@@ -556,6 +565,29 @@ class Database:
                    VALUES (?, ?, ?, ?)""",
                 (parent_id, child_id, event_type, details)
             )
+
+    # ============================================================
+    # FCM ТОКЕНЫ УСТРОЙСТВ
+    # ============================================================
+
+    def save_device_token(self, child_id: int, fcm_token: str, platform: str = "android"):
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO device_tokens (child_id, fcm_token, platform, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(child_id) DO UPDATE SET
+                       fcm_token=excluded.fcm_token,
+                       platform=excluded.platform,
+                       updated_at=excluded.updated_at""",
+                (child_id, fcm_token, platform, datetime.now().isoformat())
+            )
+
+    def get_device_token(self, child_id: int) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT fcm_token FROM device_tokens WHERE child_id = ?", (child_id,)
+            ).fetchone()
+            return row[0] if row else None
 
     # ============================================================
     # БЛОКИРОВКИ

@@ -16,6 +16,7 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, ContextTypes, filters,
 )
 from db import Database
+import fcm as push
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,8 +34,7 @@ APP_ANDROID_URL    = "https://play.google.com/store/apps/details?id=ru.telegramk
 APP_IOS_URL        = "https://apps.apple.com/app/telegram-kids/id0000000000"
 
 db = Database()
-parent_app: Application = None       # инициализируется в build_app(), используется из api_server
-pending_events: dict = {}            # request_id -> asyncio.Event, сигнализирует /join-chat и /use-bot
+parent_app: Application = None  # инициализируется в build_app(), используется из api_server
 
 # ============================================================
 # СОСТОЯНИЯ ДИАЛОГА РЕГИСТРАЦИИ
@@ -724,6 +724,20 @@ async def notify_parent_bot_request(app, parent_tg_id: str, request_id: str,
 
 
 # ============================================================
+# FCM — уведомление ребёнка о решении родителя
+# ============================================================
+
+def _notify_child(req: dict, request_id: str, status: str):
+    """Отправляет FCM push ребёнку с результатом решения родителя."""
+    child_id = req.get("child_id")
+    if not child_id:
+        return
+    fcm_token = db.get_device_token(child_id)
+    if fcm_token:
+        push.send_decision(fcm_token, request_id, status)
+
+
+# ============================================================
 # ОБРАБОТКА КНОПОК РАЗРЕШЕНИЙ
 # ============================================================
 
@@ -738,8 +752,7 @@ async def handle_permission_callback(update: Update, context: ContextTypes.DEFAU
         req = db.get_pending_request(request_id)
         name = req.get("chat_name") or req.get("bot_name", "")
         await query.edit_message_text(f"✅ Разрешено: *{name}*", parse_mode="Markdown")
-        if request_id in pending_events:
-            pending_events[request_id].set()
+        _notify_child(req, request_id, "approved")
 
     elif data.startswith("reject_"):
         request_id = data[7:]
@@ -747,8 +760,7 @@ async def handle_permission_callback(update: Update, context: ContextTypes.DEFAU
         req = db.get_pending_request(request_id)
         name = req.get("chat_name") or req.get("bot_name", "")
         await query.edit_message_text(f"❌ Запрещено: *{name}*", parse_mode="Markdown")
-        if request_id in pending_events:
-            pending_events[request_id].set()
+        _notify_child(req, request_id, "rejected")
 
     elif data.startswith("block_"):
         request_id = data[6:]
@@ -759,12 +771,11 @@ async def handle_permission_callback(update: Update, context: ContextTypes.DEFAU
             item_name = req.get("chat_name") or req.get("bot_name", "")
             child_id = req.get("child_id")
             db.add_blocked(item_type, item_id, item_name, child_id=child_id)
-            db.update_request_status(request_id, "rejected")
+            db.update_request_status(request_id, "blocked")
             await query.edit_message_text(
                 f"🚫 Заблокировано навсегда: *{item_name}*", parse_mode="Markdown"
             )
-            if request_id in pending_events:
-                pending_events[request_id].set()
+            _notify_child(req, request_id, "blocked")
 
     elif data.startswith("blockitem_"):
         parts = data.split("_", 3)
@@ -833,6 +844,8 @@ def build_app() -> Application:
 
 
 async def main():
+    push.init_fcm()
+
     # Добавляем первую версию политики, если её ещё нет
     if not db.get_current_policy():
         db.save_policy_version("1.0", PRIVACY_POLICY_TEXT, PRIVACY_POLICY_URL)
