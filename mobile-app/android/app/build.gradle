@@ -107,8 +107,8 @@ android {
 // Принудительно используем androidx.core 1.15.0 — совместима с AGP 8.2.1 / compileSdk 34
 configurations.all {
     resolutionStrategy {
-        force 'androidx.core:core:1.15.0'
-        force 'androidx.core:core-ktx:1.15.0'
+        force 'androidx.core:core:1.13.0'
+        force 'androidx.core:core-ktx:1.13.0'
     }
 }
 
