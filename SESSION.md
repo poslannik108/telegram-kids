@@ -1,84 +1,81 @@
-# SESSION.md — состояние проекта на конец сессии 2026-05-22 (вечер)
+# SESSION.md — состояние проекта на конец сессии 2026-05-22 (вечер 2)
 
-## Статус: Фаза 1а завершена — фундамент готов
+## Статус: пытаемся получить первый билд на Windows-эмуляторе
 
 ---
 
 ## Что сделано (эта сессия)
 
-### Бэкенд (backend/)
+### Фаза 1а — выполнена полностью ✅
+- `feature_flags`, `app_themes`, `translations` таблицы в db.py
+- 3 публичных эндпоинта: GET /feature-flags, /theme, /translations/{lang}/{ns}
+- `src/theme/ThemeProvider.js` + `src/theme/useTheme.js`
+- `src/store/featureFlags.js` + `src/hooks/useFeatureFlag.js`
+- `src/i18n/i18n.js` + `src/i18n/useTranslation.js` + locales/ru|en
+- `App.js` обновлён — ThemeProvider, initI18n, colors.* вместо hex
+- Всё верифицировано через FastAPI TestClient
 
-**Три новых таблицы в `db.py`:**
-- `feature_flags` (name, is_enabled, description) — 8 флагов засеяны
-- `app_themes` (отдельные колонки для всех цветов, шрифтов, радиусов) — дефолтная тема засеяна
-- `translations` (lang, namespace, key, value) — RU + EN для common/auth/chats/settings
+### Обновления документации
+- TODO.md: звонки добавлены в MVP (Фаза 2б), все фазы теперь MVP
+- MVP = полный Telegram для детей (текст, медиа, стикеры, звонки, Stories, группы) + Android
 
-**Три публичных эндпоинта в `api_server.py` (без авторизации):**
-- `GET /feature-flags` → `{ stories: false, voice_messages: true, ... }`
-- `GET /theme` → `{ colors: {...}, fonts: {...}, radii: {...}, iconSet: 'material' }`
-- `GET /translations/{lang}/{namespace}` → `{ key: "value", ... }`
+### Обновление React Native (попытка первого билда)
+Проблема: RN 0.74.7 несовместим с библиотеками 2025-2026 года.
+Решение: обновили до RN 0.78.0.
 
-### Мобильное приложение (mobile-app/)
+Изменения в android/:
+- `compileSdkVersion = 35`, `targetSdkVersion = 35`, `buildToolsVersion = "35.0.0"`
+- `minSdkVersion = 24`
+- Gradle: 8.6 → 8.10.2
+- `newArchEnabled=false` — уже было
 
-**`config.js`** — единая точка BASE_URL и API_SECRET (api.js обновлён)
-
-**`src/theme/ThemeProvider.js`** — React context, загружает тему:
-1. MMKV-кэш (мгновенно)
-2. GET /theme в фоне (обновляет)
-3. DEFAULT_THEME как fallback
-
-**`src/theme/useTheme.js`** — `const { colors, fonts, radii } = useTheme()`
-
-**`src/store/featureFlags.js`** — Zustand store, та же логика кэша
-
-**`src/hooks/useFeatureFlag.js`** — `const { isEnabled } = useFeatureFlag('stories')`
-
-**`src/i18n/i18n.js`** — `initI18n()`:
-- Инициализация из MMKV-кэша + встроенных locales (синхронно)
-- Обновление с сервера в фоне
-
-**`src/i18n/useTranslation.js`** — реэкспорт `{ useTranslation }` из react-i18next
-
-**`src/i18n/locales/ru/`** — common, auth, chats, settings
-
-**`src/i18n/locales/en/`** — common, auth, chats, settings
-
-**`App.js` обновлён:**
-- Инициализирует i18n первым (async, показывает спиннер)
-- Оборачивает в `ThemeProvider`
-- Загружает флаги параллельно с AsyncStorage.getItem
-- Все цвета через `colors.bg`, `colors.accent` — нет хардкода
+Изменения в package.json:
+- `react-native: 0.74.7` → `0.78.0`
+- `react: 18.2.0` → `19.0.0` (RN 0.78 требует React 19)
+- `react-native-reanimated: 3.19.5` (совместима с RN 0.78, overrides убраны)
+- `react-native-fast-image` — удалена (заброшена, не поддерживает React 19)
+- Добавлены `@react-native-community/cli: 15.0.0` и `cli-platform-android: 15.0.0`
 
 ---
 
-## Следующий шаг (Фаза 1 — TdLib)
+## Текущая проблема — первый билд
 
-Теперь фундамент готов. Следующая задача:
+Gradle зависает на `0% INITIALIZING — Evaluating settings` (~20+ минут).
 
-**1. Проверить первый билд на Windows:**
+**Причина:** скорее всего Windows Defender сканирует тысячи файлов Gradle.
+
+**Что уже сделано:**
 ```powershell
-# Запустить эмулятор
-C:\Users\posla\AppData\Local\Android\Sdk\emulator\emulator.exe -avd TelegramKidsPhone
+Add-MpPreference -ExclusionPath "C:\Projects\telegram-kids"
+Add-MpPreference -ExclusionPath "$env:USERPROFILE\.gradle"
+Add-MpPreference -ExclusionPath "$env:USERPROFILE\.android"
+Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\npm-cache"
+```
+Исключения добавлены. После этого сборка ещё не перезапускалась.
 
-# Запустить Metro и сборку
+**Что нужно сделать завтра первым делом:**
+
+```powershell
 cd C:\Projects\telegram-kids\mobile-app
-npx react-native start   # в одном терминале
-npx react-native run-android   # в другом
+npx react-native run-android
 ```
 
-**2. Начать TdLib.js (Фаза 1):**
-
+Если снова зависнет на 0% дольше 5 минут — следующий шаг:
+проверить сетевую активность во время сборки:
+```powershell
+# В отдельном окне пока идёт сборка:
+netstat -b 5
 ```
-src/TdLib.js      ← singleton, инициализация, обработка событий
-src/store/auth.js ← Zustand: { status, user }
-src/store/chats.js ← Zustand: { chats: Map, order: [], loading }
-```
+Это покажет к каким серверам Gradle пытается подключиться.
 
-ПРАВИЛО для каждого компонента:
-- Цвета: ТОЛЬКО `useTheme()` — никаких hex в JSX
-- Строки: ТОЛЬКО `t('ключ')` из `useTranslation`
-- Флаги: `useFeatureFlag('name').isEnabled` — новые фичи за флагом
-- Данные: ТОЛЬКО через хуки → store → TdLib.js (не fetch из экрана)
+Если проблема в медленном Maven/Google repo — добавить зеркало в ~/.gradle/init.gradle.
+
+---
+
+## Эмулятор
+- Имя: `TelegramKidsPhone` (Pixel 6, Android 14)
+- Запуск: `C:\Users\posla\AppData\Local\Android\Sdk\emulator\emulator.exe -avd TelegramKidsPhone`
+- Metro сервер: `npx react-native start --reset-cache` (порт 8081)
 
 ---
 
@@ -90,11 +87,9 @@ src/store/chats.js ← Zustand: { chats: Map, order: [], loading }
 | Мобильный (WSL2) | `~/projects/telegram-kids/mobile-app/` |
 | Мобильный (Windows) | `C:\Projects\telegram-kids\mobile-app\` |
 | Репо | https://github.com/poslannik108/telegram-kids |
-| Эмулятор | Windows: TelegramKidsPhone (Pixel 6, Android 14) |
-| ADB | `C:\Users\posla\AppData\Local\Android\Sdk\platform-tools\adb.exe` |
 
 ---
 
-## Как начать следующую сессию
+## Как начать завтра
 
 Написать одно слово: **продолжаем**
