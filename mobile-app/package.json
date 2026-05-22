@@ -34,5 +34,8 @@
     "@react-native/babel-preset": "0.74.84",
     "@react-native/metro-config": "0.74.84",
     "eslint": "^8.19.0"
+  },
+  "overrides": {
+    "react-native-reanimated": "3.6.2"
   }
 }
