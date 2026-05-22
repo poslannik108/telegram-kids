@@ -3,8 +3,9 @@
 ## Статус сборки
 - [x] JDK 17, Android SDK, NDK r26, CMake — установлены
 - [x] TDLib собран для arm64-v8a, armeabi-v7a, x86_64, x86
-- [ ] React Native проект создан и подключён к TDLib
-- [ ] Первый запуск на устройстве
+- [x] React Native проект создан, TDLib подключён (TdLibModule.kt, TdLibPackage.kt, libtdjni.so)
+- [x] Фундамент (feature flags, remote theming, i18n) — реализован, верифицирован
+- [ ] Первый запуск на устройстве (TelegramKidsPhone, Windows)
 
 ---
 
@@ -53,6 +54,28 @@
 | Бар историй | верхняя часть ChatsScreen, аватары с кольцом | 1 нед (входит выше) |
 | Реакции и ответы на истории | эмодзи-реакции, reply в личку | 1 нед (входит выше) |
 
+## Фаза 2б — Звонки (голос + видео) [MVP]
+*TDLib берёт на себя WebRTC/VoIP — нам нужен только UI и обработка событий*
+
+| Задача | Что нужно | Срок |
+|---|---|---|
+| Голосовые звонки | `createCall({is_video:false})`, `updateCall`, CallScreen | 2–3 нед |
+| Видеозвонки | `createCall({is_video:true})`, переключение камеры, pip-режим | 2–3 нед |
+| Входящий звонок | экран входящего звонка, ringtone, отклонение | 1 нед |
+| CallScreen.js | кнопки mute/speaker/camera/end, таймер длительности | 1 нед |
+| Разрешения | микрофон + камера (Android PermissionsAndroid) | 3–5 дн |
+| Родительский контроль — звонки | разрешить/запретить звонки в feature flag | 2–3 дн |
+
+> **Почему это MVP:** безопасные звонки — ключевая функция для родителей и детей.
+> TDLib реализует WebRTC/DTLS/SRTP внутри — нам не нужен отдельный WebRTC-стек.
+> Оценка с TDLib: **~5–7 нед** (vs. 8–12 нед с нуля).
+
+**Что нужно добавить в feature_flags:**
+```sql
+calls_voice    -- Голосовые звонки (true = включены)
+calls_video    -- Видеозвонки (true = включены)
+```
+
 ## Фаза 5 — Дополнительный функционал
 
 | Задача | Что нужно | Срок |
@@ -61,72 +84,26 @@
 | Поиск | по сообщениям внутри чата + глобальный | 1–2 нед |
 | Профиль | аватар, имя, username, биография, медиагалерея | 1–2 нед |
 | **Групповые чаты** | **список участников, роли, экраны управления** | **3–4 нед** |
-| **Звонки (голос + видео)** | **WebRTC интеграция, отдельный UI звонка** | **8–12 нед** |
 
-## Фаза 1а — Фундамент (делать ПЕРВЫМ — до любых экранов)
+## ✅ Фаза 1а — Фундамент (ВЫПОЛНЕНО 2026-05-22)
 *feature flags + remote theming + i18n — всё до первого экрана*
 
-- [ ] Таблица `feature_flags` в `db.py` (name, is_enabled, description)
-      Засеять флаги: stories, video_notes, reactions, calls, stickers_animated,
+- [x] Таблица `feature_flags` в `db.py` (name, is_enabled, description)
+      Засеяны: stories, video_notes, reactions, calls, stickers_animated,
       voice_messages, file_sharing, search_global
-- [ ] `GET /feature-flags` в `api_server.py` — возвращает все флаги (без авторизации)
-- [ ] `src/hooks/useFeatureFlag.js` — читает флаги из кэша, обновляет при старте
-- [ ] `src/store/featureFlags.js` — Zustand store для флагов
-- [ ] `src/theme/ThemeProvider.js` — remote theming (см. Фаза 1б)
-- [ ] `src/theme/useTheme.js` — hook, все компоненты получают тему через него
-- [ ] Убедиться что слои соблюдены: экраны → хуки → store → TdLib.js/api.js
-
-**i18n (мультиязычность):**
-- [ ] Таблица `translations` в `db.py` (lang, namespace, key, value)
-- [ ] `GET /translations/{lang}/{namespace}` в `api_server.py`
-- [ ] Засеять RU + EN строки при старте сервера
-- [ ] Добавить `language` в таблицу `parents` + передавать язык в боте
-- [ ] `npm install i18next react-i18next react-native-localize dayjs`
-- [ ] `src/i18n/i18n.js` — инициализация (MMKV кэш → сервер → fallback locales)
-- [ ] `src/i18n/locales/ru/` и `src/i18n/locales/en/` — все namespace-файлы
-- [ ] `src/i18n/useTranslation.js` — единая точка входа
-- [ ] Все строки в компонентах через `t('ключ')`, не хардкод
-
-## Фаза 1б — Remote Theming (цвета, шрифты, иконки из БД)
-*Делать параллельно с Фазой 1 — закладывается в фундамент*
-
-**Концепция:** все визуальные параметры приложения хранятся в БД на сервере.
-Приложение загружает тему при старте и кэширует локально. Смена темы — без обновления в сторе.
-
-**Бэкенд:**
-- [ ] Таблица `app_themes` в `db.py`:
-  ```sql
-  id, name, is_active,
-  -- Цвета
-  color_bg, color_bg_secondary, color_bg_element,
-  color_accent, color_bubble_in, color_bubble_out,
-  color_text, color_text_secondary, color_divider,
-  color_danger, color_success,
-  -- Шрифты
-  font_size_base, font_size_small, font_size_large,
-  font_weight_normal, font_weight_bold,
-  -- Форма элементов
-  border_radius_bubble, border_radius_button, border_radius_avatar,
-  -- Иконки
-  icon_set,   -- 'material' | 'ionicons' | 'custom'
-  created_at, updated_at
-  ```
-- [ ] `GET /theme` в `api_server.py` — возвращает активную тему (без авторизации)
-- [ ] Метод `get_active_theme()` и `set_active_theme(theme_id)` в `db.py`
-- [ ] Засеять дефолтную тему при старте сервера
-
-**Мобильное приложение:**
-- [ ] `src/theme/ThemeProvider.js` — загружает тему с сервера, кэширует в MMKV
-- [ ] `src/theme/useTheme.js` — hook, все компоненты получают тему через него
-- [ ] Все цвета/размеры в компонентах — ТОЛЬКО через `useTheme()`, не хардкод
-- [ ] Fallback на встроенную дефолтную тему если сервер недоступен
-- [ ] Обновление темы раз в сутки в фоне (или при pull-to-refresh)
-
-**Пример использования в компоненте:**
-```js
-const { colors, fonts, radii } = useTheme()
-// colors.accent, colors.bgElement, fonts.sizeBase, radii.bubble
-```
+- [x] `GET /feature-flags` в `api_server.py` — публичный, без авторизации
+- [x] `src/hooks/useFeatureFlag.js` + `src/store/featureFlags.js` — Zustand + MMKV
+- [x] `src/theme/ThemeProvider.js` + `src/theme/useTheme.js` — remote theming
+- [x] Таблица `app_themes` — все колонки (цвета/шрифты/радиусы), дефолтная тема засеяна
+- [x] `GET /theme` — активная тема, публичный
+- [x] Таблица `translations` (lang, namespace, key, value) — RU+EN засеяны
+- [x] `GET /translations/{lang}/{namespace}` — публичный
+- [x] `src/i18n/i18n.js` — MMKV кэш → сервер в фоне → встроенные locales
+- [x] `src/i18n/locales/ru|en/` — common, auth, chats, settings
+- [x] `src/i18n/useTranslation.js` — единая точка входа
+- [x] `App.js` обновлён — ThemeProvider, initI18n, colors.* вместо hex
+- [ ] Добавить `language` в таблицу `parents` + переводы в боте (namespace `bot`)
+- [ ] Добавить флаги `calls_voice`, `calls_video` (для Фазы 2б)
 
 ## Фаза 6 — Родительский контроль (интеграция с бэкендом)
 *Большинство уже реализовано в backend/main.py*
@@ -214,19 +191,21 @@ App.js
 
 ## Сводная таблица сроков
 
-| Фаза | Содержание | Срок |
-|---|---|---|
-| 1 | TDLib + авторизация + базовые чаты + текст | 2–3 нед |
-| 2 | Фото, **видео (3–4 нед)**, аудио, файлы, reply | 2–3 мес |
-| 3 | Стикеры **(5–6 нед)**, GIF **(2–3 нед)**, кружочки **(4–5 нед)**, реакции **(2–3 нед)**, эмодзи | 3–4 мес |
-| 4 | Stories **(7–9 нед)** | 2 мес |
-| 5 | Архив, поиск, профили, группы **(3–4 нед)**, **звонки (8–12 нед)** | 3–4 мес |
-| 6 | Родительский контроль (WebSocket, push) | 2–3 нед |
-| 7 | Полировка, публикация | 2–3 нед |
-| **Итого** | | **~12–16 месяцев** |
+| Фаза | Содержание | Срок | MVP |
+|---|---|---|---|
+| 1а | feature flags + remote theming + i18n | ✅ готово | ✅ |
+| 1 | TDLib + авторизация + базовые чаты + текст | 2–3 нед | ✅ |
+| 2 | Фото, **видео (3–4 нед)**, аудио, файлы, reply | 2–3 мес | ✅ |
+| **2б** | **Голосовые + видеозвонки (TDLib WebRTC)** | **5–7 нед** | **✅ MVP** |
+| 3 | Стикеры **(5–6 нед)**, GIF **(2–3 нед)**, кружочки **(4–5 нед)**, реакции **(2–3 нед)**, эмодзи | 3–4 мес | — |
+| 4 | Stories **(7–9 нед)** | 2 мес | — |
+| 5 | Архив, поиск, профили, группы **(3–4 нед)** | 2–3 мес | — |
+| 6 | Родительский контроль (WebSocket, push) | 2–3 нед | ✅ |
+| 7 | Полировка, публикация | 2–3 нед | ✅ |
+| **MVP итого** | **Фазы 1а + 1 + 2 + 2б + 6 + 7** | **~8–10 мес** | |
+| **Полная версия** | | **~14–18 мес** | |
 
-> Звонки (8–12 нед) — самая сложная часть. Можно отложить на после MVP.
-> Без звонков: **~8–10 месяцев**.
+> Звонки включены в MVP. TDLib реализует VoIP внутри — нам нужен только UI (~5–7 нед вместо 8–12).
 
 *Обновлено: 2026-05-22*
-*Текущий этап: Фаза 1 — ожидание завершения сборки TDLib, затем setup-rn.sh*
+*Текущий этап: Фаза 1 — первый запуск на Windows-эмуляторе, затем TdLib.js + store/auth.js*
