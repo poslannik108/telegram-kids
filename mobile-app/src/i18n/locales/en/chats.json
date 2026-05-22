@@ -1,0 +1,11 @@
+{
+  "title": "Chats",
+  "empty": "No active chats",
+  "blocked": "Blocked",
+  "contacts": "Contacts",
+  "settings": "Settings",
+  "send": "Send",
+  "type_message": "Message...",
+  "unread_count": "{{count}} unread",
+  "pending_approval": "Waiting for approval"
+}

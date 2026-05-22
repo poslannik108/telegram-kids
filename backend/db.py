@@ -16,6 +16,7 @@ class Database:
         self.db_path = db_path
         self._init_db()
         self._migrate()
+        self._seed_defaults()
 
     def _connect(self):
         conn = sqlite3.connect(self.db_path)
@@ -152,6 +153,50 @@ class Database:
                     action TEXT NOT NULL,
                     details TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS feature_flags (
+                    name TEXT PRIMARY KEY,
+                    is_enabled INTEGER NOT NULL DEFAULT 0,
+                    description TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS app_themes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    color_bg TEXT NOT NULL DEFAULT '#17212b',
+                    color_bg_secondary TEXT NOT NULL DEFAULT '#0e1621',
+                    color_bg_element TEXT NOT NULL DEFAULT '#1e2d3d',
+                    color_accent TEXT NOT NULL DEFAULT '#2E86AB',
+                    color_bubble_in TEXT NOT NULL DEFAULT '#182533',
+                    color_bubble_out TEXT NOT NULL DEFAULT '#1B5E8A',
+                    color_text TEXT NOT NULL DEFAULT '#ffffff',
+                    color_text_secondary TEXT NOT NULL DEFAULT '#aaaaaa',
+                    color_divider TEXT NOT NULL DEFAULT '#2b3a4a',
+                    color_danger TEXT NOT NULL DEFAULT '#e53935',
+                    color_success TEXT NOT NULL DEFAULT '#4caf50',
+                    font_size_base INTEGER NOT NULL DEFAULT 14,
+                    font_size_small INTEGER NOT NULL DEFAULT 12,
+                    font_size_large INTEGER NOT NULL DEFAULT 16,
+                    font_weight_normal TEXT NOT NULL DEFAULT '400',
+                    font_weight_bold TEXT NOT NULL DEFAULT '600',
+                    border_radius_bubble INTEGER NOT NULL DEFAULT 18,
+                    border_radius_button INTEGER NOT NULL DEFAULT 8,
+                    border_radius_avatar INTEGER NOT NULL DEFAULT 50,
+                    icon_set TEXT NOT NULL DEFAULT 'material',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS translations (
+                    lang TEXT NOT NULL,
+                    namespace TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(lang, namespace, key)
                 );
             """)
 
@@ -725,3 +770,194 @@ class Database:
                 {"action": r[0], "details": r[1], "created_at": r[2]}
                 for r in rows
             ]
+
+    # ============================================================
+    # FEATURE FLAGS
+    # ============================================================
+
+    def get_feature_flags(self) -> dict:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT name, is_enabled FROM feature_flags"
+            ).fetchall()
+            return {r[0]: bool(r[1]) for r in rows}
+
+    def set_feature_flag(self, name: str, is_enabled: bool, description: str = None):
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO feature_flags (name, is_enabled, description, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET
+                       is_enabled=excluded.is_enabled,
+                       updated_at=excluded.updated_at""",
+                (name, 1 if is_enabled else 0, description, now)
+            )
+
+    # ============================================================
+    # ТЕМЫ
+    # ============================================================
+
+    def get_active_theme(self) -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT color_bg, color_bg_secondary, color_bg_element,
+                          color_accent, color_bubble_in, color_bubble_out,
+                          color_text, color_text_secondary, color_divider,
+                          color_danger, color_success,
+                          font_size_base, font_size_small, font_size_large,
+                          font_weight_normal, font_weight_bold,
+                          border_radius_bubble, border_radius_button, border_radius_avatar,
+                          icon_set
+                   FROM app_themes WHERE is_active = 1 LIMIT 1"""
+            ).fetchone()
+            if not row:
+                return self._default_theme_dict()
+            return {
+                "colors": {
+                    "bg": row[0], "bgSecondary": row[1], "bgElement": row[2],
+                    "accent": row[3], "bubbleIn": row[4], "bubbleOut": row[5],
+                    "text": row[6], "textSecondary": row[7], "divider": row[8],
+                    "danger": row[9], "success": row[10],
+                },
+                "fonts": {
+                    "sizeBase": row[11], "sizeSmall": row[12], "sizeLarge": row[13],
+                    "weightNormal": row[14], "weightBold": row[15],
+                },
+                "radii": {
+                    "bubble": row[16], "button": row[17], "avatar": row[18],
+                },
+                "iconSet": row[19],
+            }
+
+    @staticmethod
+    def _default_theme_dict() -> dict:
+        return {
+            "colors": {
+                "bg": "#17212b", "bgSecondary": "#0e1621", "bgElement": "#1e2d3d",
+                "accent": "#2E86AB", "bubbleIn": "#182533", "bubbleOut": "#1B5E8A",
+                "text": "#ffffff", "textSecondary": "#aaaaaa", "divider": "#2b3a4a",
+                "danger": "#e53935", "success": "#4caf50",
+            },
+            "fonts": {
+                "sizeBase": 14, "sizeSmall": 12, "sizeLarge": 16,
+                "weightNormal": "400", "weightBold": "600",
+            },
+            "radii": {"bubble": 18, "button": 8, "avatar": 50},
+            "iconSet": "material",
+        }
+
+    # ============================================================
+    # ПЕРЕВОДЫ
+    # ============================================================
+
+    def get_translations(self, lang: str, namespace: str) -> dict:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM translations WHERE lang = ? AND namespace = ?",
+                (lang, namespace)
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+
+    def set_translation(self, lang: str, namespace: str, key: str, value: str):
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO translations (lang, namespace, key, value)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(lang, namespace, key) DO UPDATE SET value=excluded.value""",
+                (lang, namespace, key, value)
+            )
+
+    # ============================================================
+    # SEED-ДАННЫЕ (вызывается при каждом старте, идемпотентно)
+    # ============================================================
+
+    def _seed_defaults(self):
+        with self._connect() as conn:
+            # Feature flags
+            flags = [
+                ('stories', 0, 'Истории (Stories)'),
+                ('video_notes', 0, 'Видео-кружочки'),
+                ('reactions', 0, 'Реакции на сообщения'),
+                ('calls', 0, 'Голосовые и видеозвонки'),
+                ('stickers_animated', 0, 'Анимированные стикеры'),
+                ('voice_messages', 1, 'Голосовые сообщения'),
+                ('file_sharing', 1, 'Отправка файлов'),
+                ('search_global', 0, 'Глобальный поиск'),
+            ]
+            for name, is_enabled, desc in flags:
+                conn.execute(
+                    "INSERT OR IGNORE INTO feature_flags (name, is_enabled, description) VALUES (?, ?, ?)",
+                    (name, is_enabled, desc)
+                )
+
+            # Default theme
+            conn.execute(
+                """INSERT OR IGNORE INTO app_themes (name, is_active) VALUES ('default', 1)"""
+            )
+
+            # Translations (ru)
+            ru_common = [
+                ('loading', 'Загрузка...'), ('error', 'Ошибка'), ('retry', 'Повторить'),
+                ('cancel', 'Отмена'), ('save', 'Сохранить'), ('ok', 'ОК'),
+                ('offline', 'Нет соединения'), ('send', 'Отправить'),
+            ]
+            ru_auth = [
+                ('title', 'Telegram Kids'), ('subtitle', 'Безопасный мессенджер для детей'),
+                ('phone_label', 'Номер телефона'), ('phone_placeholder', '+7 999 123 45 67'),
+                ('send_code', 'Отправить код'), ('code_label', 'Код из Telegram'),
+                ('code_placeholder', '12345'), ('confirm', 'Войти'),
+                ('awaiting_link', 'Ожидаем подтверждения родителя'),
+                ('awaiting_link_hint', 'Попросите родителя привязать вас в боте Telegram Kids'),
+            ]
+            ru_chats = [
+                ('title', 'Чаты'), ('empty', 'Нет активных чатов'),
+                ('blocked', 'Заблокировано'), ('contacts', 'Контакты'),
+                ('settings', 'Настройки'), ('send', 'Отправить'),
+                ('type_message', 'Сообщение...'),
+            ]
+            ru_settings = [
+                ('title', 'Настройки'), ('logout', 'Выйти'),
+                ('account', 'Аккаунт'), ('parent_control', 'Родительский контроль'),
+            ]
+
+            # Translations (en)
+            en_common = [
+                ('loading', 'Loading...'), ('error', 'Error'), ('retry', 'Retry'),
+                ('cancel', 'Cancel'), ('save', 'Save'), ('ok', 'OK'),
+                ('offline', 'No connection'), ('send', 'Send'),
+            ]
+            en_auth = [
+                ('title', 'Telegram Kids'), ('subtitle', 'Safe messenger for children'),
+                ('phone_label', 'Phone number'), ('phone_placeholder', '+1 555 123 4567'),
+                ('send_code', 'Send code'), ('code_label', 'Code from Telegram'),
+                ('code_placeholder', '12345'), ('confirm', 'Sign in'),
+                ('awaiting_link', 'Waiting for parent approval'),
+                ('awaiting_link_hint', 'Ask your parent to link you in the Telegram Kids bot'),
+            ]
+            en_chats = [
+                ('title', 'Chats'), ('empty', 'No active chats'),
+                ('blocked', 'Blocked'), ('contacts', 'Contacts'),
+                ('settings', 'Settings'), ('send', 'Send'),
+                ('type_message', 'Message...'),
+            ]
+            en_settings = [
+                ('title', 'Settings'), ('logout', 'Sign out'),
+                ('account', 'Account'), ('parent_control', 'Parental control'),
+            ]
+
+            all_translations = (
+                [('ru', 'common', k, v) for k, v in ru_common] +
+                [('ru', 'auth', k, v) for k, v in ru_auth] +
+                [('ru', 'chats', k, v) for k, v in ru_chats] +
+                [('ru', 'settings', k, v) for k, v in ru_settings] +
+                [('en', 'common', k, v) for k, v in en_common] +
+                [('en', 'auth', k, v) for k, v in en_auth] +
+                [('en', 'chats', k, v) for k, v in en_chats] +
+                [('en', 'settings', k, v) for k, v in en_settings]
+            )
+            for lang, namespace, key, value in all_translations:
+                conn.execute(
+                    "INSERT OR IGNORE INTO translations (lang, namespace, key, value) VALUES (?, ?, ?, ?)",
+                    (lang, namespace, key, value)
+                )

@@ -1,0 +1,10 @@
+{
+  "loading": "Loading...",
+  "error": "Error",
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "save": "Save",
+  "ok": "OK",
+  "offline": "No connection",
+  "send": "Send"
+}

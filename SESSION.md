@@ -1,70 +1,100 @@
-# Текущая сессия — состояние проекта
+# SESSION.md — состояние проекта на конец сессии 2026-05-22 (вечер)
 
-## Статус: ожидание завершения сборки TDLib
-
-### Что сделано (все предыдущие сессии)
-
-**Бэкенд (Python) — полностью готов:**
-- `main.py` — бот родителя с полным регистрационным флоу (ConversationHandler):
-  имя ребёнка → дата рождения → статус родства → телефон → имя/email родителя
-  → политика конфиденциальности (DOI) → ссылки на скачивание → код привязки
-- `db.py` — SQLite: parents, children, linking_codes, privacy_policy_versions,
-  privacy_policy_consents, email_verification_tokens, rate_limits, registration_logs
-- `api_server.py` — FastAPI: per-child Telethon сессии, event-based ожидание
-  решения родителя (asyncio.Event, без polling), auth endpoints
-- Rate limiting на всех точках входа
-- DOI email верификация с аудит-историей
-
-**Мобильное приложение (React Native) — базовые экраны:**
-- LoginScreen, AwaitingLinkScreen, ChatsScreen, MessagesScreen,
-  ContactsScreen, SettingsScreen, PendingScreen (делает реальный API-вызов)
-- api.js с динамическими headers и всеми endpoints
-> ВАЖНО: эти экраны написаны под старую REST-архитектуру.
-> После подключения TDLib они будут полностью переписаны.
-
-**Инфраструктура:**
-- GitHub: https://github.com/poslannik108/telegram-kids
-- SSH ключ настроен
-- TDLib собран: arm64-v8a ✓, armeabi-v7a ✓, x86_64 (в процессе), x86 (ожидает)
-- setup-android.sh, setup-tdlib.sh, setup-rn.sh — готовы
+## Статус: Фаза 1а завершена — фундамент готов
 
 ---
 
-## Следующая сессия — начать отсюда
+## Что сделано (эта сессия)
 
-**Команда пользователю перед началом:**
-```bash
-# Убедиться что TDLib собран:
-find ~/td/example/android/tdlib/libs -name "libtdjni.so" | sort
+### Бэкенд (backend/)
 
-# Если 4 файла — запустить:
-bash ~/projects/telegram-kids/setup-rn.sh
+**Три новых таблицы в `db.py`:**
+- `feature_flags` (name, is_enabled, description) — 8 флагов засеяны
+- `app_themes` (отдельные колонки для всех цветов, шрифтов, радиусов) — дефолтная тема засеяна
+- `translations` (lang, namespace, key, value) — RU + EN для common/auth/chats/settings
+
+**Три публичных эндпоинта в `api_server.py` (без авторизации):**
+- `GET /feature-flags` → `{ stories: false, voice_messages: true, ... }`
+- `GET /theme` → `{ colors: {...}, fonts: {...}, radii: {...}, iconSet: 'material' }`
+- `GET /translations/{lang}/{namespace}` → `{ key: "value", ... }`
+
+### Мобильное приложение (mobile-app/)
+
+**`config.js`** — единая точка BASE_URL и API_SECRET (api.js обновлён)
+
+**`src/theme/ThemeProvider.js`** — React context, загружает тему:
+1. MMKV-кэш (мгновенно)
+2. GET /theme в фоне (обновляет)
+3. DEFAULT_THEME как fallback
+
+**`src/theme/useTheme.js`** — `const { colors, fonts, radii } = useTheme()`
+
+**`src/store/featureFlags.js`** — Zustand store, та же логика кэша
+
+**`src/hooks/useFeatureFlag.js`** — `const { isEnabled } = useFeatureFlag('stories')`
+
+**`src/i18n/i18n.js`** — `initI18n()`:
+- Инициализация из MMKV-кэша + встроенных locales (синхронно)
+- Обновление с сервера в фоне
+
+**`src/i18n/useTranslation.js`** — реэкспорт `{ useTranslation }` из react-i18next
+
+**`src/i18n/locales/ru/`** — common, auth, chats, settings
+
+**`src/i18n/locales/en/`** — common, auth, chats, settings
+
+**`App.js` обновлён:**
+- Инициализирует i18n первым (async, показывает спиннер)
+- Оборачивает в `ThemeProvider`
+- Загружает флаги параллельно с AsyncStorage.getItem
+- Все цвета через `colors.bg`, `colors.accent` — нет хардкода
+
+---
+
+## Следующий шаг (Фаза 1 — TdLib)
+
+Теперь фундамент готов. Следующая задача:
+
+**1. Проверить первый билд на Windows:**
+```powershell
+# Запустить эмулятор
+C:\Users\posla\AppData\Local\Android\Sdk\emulator\emulator.exe -avd TelegramKidsPhone
+
+# Запустить Metro и сборку
+cd C:\Projects\telegram-kids\mobile-app
+npx react-native start   # в одном терминале
+npx react-native run-android   # в другом
 ```
 
-**Первая задача после `setup-rn.sh`:**
-1. Фаза 1а — фундамент (в этом порядке):
-   a. `feature_flags` в БД + `GET /feature-flags` + `useFeatureFlag.js`
-   b. `app_themes` в БД + `GET /theme` + `ThemeProvider.js` + `useTheme.js`
-   c. `translations` в БД + `GET /translations/{lang}/{ns}` + `i18n.js` + `useTranslation.js`
-2. Только после 1а — нативный модуль TdLib (Kotlin) + `TdLib.js` singleton
-3. Только после TdLib — первые экраны (LoginScreen v2)
+**2. Начать TdLib.js (Фаза 1):**
 
-> ПРАВИЛО: ни один компонент не пишется без useTheme(), useFeatureFlag(), t()
-> Хардкодные строки, цвета, флаги — нарушение архитектуры.
+```
+src/TdLib.js      ← singleton, инициализация, обработка событий
+src/store/auth.js ← Zustand: { status, user }
+src/store/chats.js ← Zustand: { chats: Map, order: [], loading }
+```
 
-**Контекст который важно помнить:**
-- Мобильное приложение должно подключаться к Telegram НАПРЯМУЮ через TDLib
-- Наш сервер — только для родительского контроля (события, блокировки)
-- Медиа идёт напрямую Telegram CDN ↔ телефон, через наш сервер НЕ проходит
-- Архитектура стейта: Zustand (уже в package.json)
-- Минимальная версия Android: API 21 (Android 5.0)
+ПРАВИЛО для каждого компонента:
+- Цвета: ТОЛЬКО `useTheme()` — никаких hex в JSX
+- Строки: ТОЛЬКО `t('ключ')` из `useTranslation`
+- Флаги: `useFeatureFlag('name').isEnabled` — новые фичи за флагом
+- Данные: ТОЛЬКО через хуки → store → TdLib.js (не fetch из экрана)
 
 ---
 
-## Открытые вопросы
-- [ ] Как пользователь будет тестировать? Физический телефон?
-- [ ] ADB подключение: USB или WiFi?
+## Ключевые пути
+
+| Что | Где |
+|---|---|
+| Бэкенд | WSL2: `~/projects/telegram-kids/backend/` |
+| Мобильный (WSL2) | `~/projects/telegram-kids/mobile-app/` |
+| Мобильный (Windows) | `C:\Projects\telegram-kids\mobile-app\` |
+| Репо | https://github.com/poslannik108/telegram-kids |
+| Эмулятор | Windows: TelegramKidsPhone (Pixel 6, Android 14) |
+| ADB | `C:\Users\posla\AppData\Local\Android\Sdk\platform-tools\adb.exe` |
 
 ---
 
-*Обновляется в конце каждой сессии*
+## Как начать следующую сессию
+
+Написать одно слово: **продолжаем**

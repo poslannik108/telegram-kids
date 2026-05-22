@@ -1,9 +1,7 @@
 // Telegram Kids API Client
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const BASE_URL = 'http://YOUR_SERVER_IP:8000';
-const API_SECRET = 'change_this_to_random_string'; // совпадает с .env
+import { BASE_URL, API_SECRET } from './config';
 
 // После логина используем токен ребёнка вместо общего секрета
 async function getHeaders() {

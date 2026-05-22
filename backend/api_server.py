@@ -97,6 +97,31 @@ async def health():
     return {"status": "ok", "service": "FamilyGuard"}
 
 
+# ============================================================
+# ПУБЛИЧНЫЕ ЭНДПОИНТЫ (без авторизации — нужны до логина)
+# ============================================================
+
+ALLOWED_LANGS = {"ru", "en", "uk", "kk", "de"}
+ALLOWED_NAMESPACES = {"common", "auth", "chats", "settings", "parental", "bot"}
+
+
+@app.get("/feature-flags")
+async def get_feature_flags():
+    return backend.db.get_feature_flags()
+
+
+@app.get("/theme")
+async def get_theme():
+    return backend.db.get_active_theme()
+
+
+@app.get("/translations/{lang}/{namespace}")
+async def get_translations(lang: str, namespace: str):
+    if lang not in ALLOWED_LANGS or namespace not in ALLOWED_NAMESPACES:
+        raise HTTPException(status_code=400, detail="Unknown lang or namespace")
+    return backend.db.get_translations(lang, namespace)
+
+
 def _create_approval_request(child: dict, req_type: str, name: str, extra: dict) -> str:
     """Создаёт pending request и уведомляет родителя. Возвращает request_id."""
     request_id = f"{req_type}_{child['id']}_{int(datetime.now().timestamp())}"
